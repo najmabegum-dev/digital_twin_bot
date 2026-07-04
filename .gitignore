@@ -1,0 +1,21 @@
+# Personal data -- never commit these
+chats/*.txt
+pairs.json
+pairs_meta.json
+embeddings.npy
+chat_history.jsonl
+
+# Secrets -- never commit these
+.env
+*.key
+# .env.example is safe to commit (it has no real keys)
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
