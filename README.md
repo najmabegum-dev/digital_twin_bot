@@ -1,205 +1,128 @@
 # Digital Twin Telegram Bot
 
-A Telegram bot that learns to text like you, trained on your real WhatsApp
-chat history. No fine-tuning, no GPU, no paid API — built as a fun
-learning project around retrieval-augmented generation (RAG) and few-shot
-prompting.
+A Telegram bot that replies the way I text. It learns from my exported WhatsApp chats using retrieval-augmented generation (RAG) and few-shot prompting. There is no fine-tuning, no GPU, and no paid API.
 
-**How it works, in short:** your past messages are embedded into vectors.
-When a friend messages the bot, it finds your most similar past replies
-and feeds them to an LLM as style examples, so the model replies the way
-you actually would — same tone, same slang, same reply length.
-
-**Stack:** Python · sentence-transformers (local embeddings) · Ollama Cloud
-(free-tier LLM inference) · python-telegram-bot
-
----
+![Bot chatting on Telegram](docs/demo.png)
 
 ## How it works
-1. You export your WhatsApp chats as .txt files
-2. A parser extracts every "friend's message -> your reply" pair
-3. Those pairs get embedded (turned into searchable vectors) locally —
-   this part is light and works fine on 4GB RAM
-4. When someone messages the bot on Telegram, it finds your 6 most similar
-   past replies and sends them as style examples to a model running on
-   Ollama Cloud (free tier)
-5. The LLM replies in your voice, and the bot sends it back on Telegram
-6. Every exchange is logged locally to `chat_history.jsonl` so you have a
-   running record of conversations the bot has had
 
----
+1. WhatsApp chats are exported as `.txt` files and parsed into **(friend's message → my reply)** pairs.
+2. Each pair is embedded locally with `sentence-transformers` (`all-MiniLM-L6-v2`), which is light enough to run on a 4 GB RAM laptop.
+3. When someone messages the bot on Telegram, it embeds the new message and finds the 6 most similar past exchanges by cosine similarity.
+4. Those exchanges go into a few-shot prompt, which is sent to a model on Ollama Cloud (free tier, `llama3.1:8b-cloud` by default).
+5. The model answers in my voice, and the bot sends the reply back on Telegram.
+6. Every exchange is appended to a local `chat_history.jsonl`.
 
-## Step 1: Sign up for Ollama Cloud (free, no card needed)
-
-1. Go to **https://ollama.com** and create a free account
-2. Go to **https://ollama.com/settings/keys** and create an API key
-3. Copy that key somewhere safe — you'll need it in Step 5
-
-You do **not** need to install Ollama locally or download any model files.
-Everything model-related happens on Ollama's servers.
-
-> Free tier limits: session limits reset every 5 hours, weekly limits reset
-> every 7 days, and you can run 1 cloud model at a time. That's plenty for
-> a personal bot chatting with friends. Stick to lighter models (see Step 6)
-> to stretch your quota further.
-
----
-
-## Step 2: Export your WhatsApp chats
-
-For each friend whose chats you want to learn from:
-1. Open the chat in WhatsApp
-2. Tap their name at the top → scroll down → **Export Chat**
-3. Choose **Without Media**
-4. Save/send yourself the resulting `.txt` file
-
-Do this for 5+ chats to get a good variety of your replies. The more
-messages, the better the bot will sound like you.
-
----
-
-## Step 3: Set up the project folder
-
-You should have these files (already created for you):
 ```
-digital_twin/
-├── chats/              <- put your exported .txt files in here (gitignored)
-├── parse_chats.py
-├── build_index.py
-├── bot.py
-├── requirements.txt
-├── .gitignore
-└── README.md (this file)
+WhatsApp .txt  →  parse_chats.py  →  build_index.py  →  embeddings.npy + pairs_meta.json
+                                                                   │
+Telegram message → bot.py → embed → top-6 similar replies → few-shot prompt → Ollama Cloud → reply
 ```
 
-Put all your exported `.txt` files inside the `chats/` folder.
+## Tech stack
 
----
+Python · sentence-transformers · NumPy · Ollama Cloud · python-telegram-bot · python-dotenv
 
-## Step 4: Install Python packages
+## Quick start
+
+### 1. Get your keys
+
+- **Ollama Cloud:** create a free account at https://ollama.com, then make an API key at https://ollama.com/settings/keys. You don't need to install Ollama locally or download any model files.
+  > Free tier limits: session limits reset every 5 hours, weekly limits reset every 7 days, and you can run 1 cloud model at a time. That's plenty for a personal bot, and lighter models stretch the quota further.
+- **Telegram:** open **@BotFather** in Telegram, send `/newbot`, pick a name and a username ending in `bot`, and copy the token it gives you.
+
+### 2. Clone and install
 
 ```bash
+git clone https://github.com/najmabegum-dev/digital_twin_bot.git
+cd digital_twin_bot
 pip install -r requirements.txt
 ```
 
----
+### 3. Add your keys
 
-## Step 5: Parse your chats
-
-```bash
-python parse_chats.py
-```
-
-This reads everything in `chats/` and creates `pairs.json` — a list of
-(friend's message, your reply) pairs. It will print how many pairs it found.
-If it's fewer than 30, consider exporting a few more chats for better results.
-
-> Note: the script is already set to look for "najma" as your name. If your
-> name appears differently in the exports (e.g. a nickname), open
-> `parse_chats.py` and change the `YOUR_NAME` variable at the top.
-
----
-
-## Step 6: Build the embeddings index
+Copy the example file and fill it in:
 
 ```bash
-python build_index.py
+# Mac / Linux
+cp .env.example .env
+
+# Windows
+copy .env.example .env
 ```
 
-First run will download a small (~80MB) embedding model — free, one-time,
-and runs locally even on 4GB RAM. This creates `embeddings.npy` and
-`pairs_meta.json`, used for retrieval.
+Then open `.env` and set:
 
----
+```
+BOT_TOKEN=your_telegram_token_here
+OLLAMA_API_KEY=your_ollama_key_here
+```
 
-## Step 7: Create your Telegram bot
+`.env` is gitignored, so your keys never get committed.
 
-1. Open Telegram, search for **@BotFather**
-2. Send `/newbot`
-3. Give it a name and a username (must end in "bot", e.g. `najma_twin_bot`)
-4. BotFather gives you a token like `123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ`
-5. Copy that token
+### 4. Export your chats
 
----
+For each chat: open it in WhatsApp → tap the name → **Export Chat** → **Without Media**. Create a `chats/` folder and put the `.txt` files in it. Five or more chats gives better results.
 
-## Step 8: Set your API keys and run the bot
+### 5. Set your name
 
-Set your Ollama Cloud API key as an environment variable (recommended, so
-it's not sitting in plain text in the code):
+Open `parse_chats.py` and set `YOUR_NAME` to match how your name appears in the exports. Also update `YOUR_NAME` in `bot.py`, which is used in the prompt.
 
-**Mac/Linux:**
+### 6. Build the data and run
+
 ```bash
-export OLLAMA_API_KEY=your_key_here
+python parse_chats.py     # creates pairs.json
+python build_index.py     # creates embeddings.npy and pairs_meta.json (downloads a ~80 MB model the first time)
+python bot.py             # starts the bot
 ```
 
-**Windows (PowerShell):**
-```powershell
-setx OLLAMA_API_KEY "your_key_here"
+When you see "Bot is running", message your bot on Telegram. Keep the terminal open while you want it active.
+
+## Project structure
+
 ```
-(then close and reopen your terminal for it to take effect)
+digital_twin_bot/
+├── parse_chats.py      WhatsApp .txt → (message, reply) pairs
+├── build_index.py      embeds the pairs and saves the index
+├── bot.py              Telegram bot: retrieval, prompt building, reply
+├── requirements.txt
+├── .env.example        template for your keys
+└── .gitignore          keeps chats, embeddings, history and keys out of git
+```
 
-Then:
-1. Open `bot.py`
-2. Paste your Telegram token into the `BOT_TOKEN` variable near the top
-3. Check `OLLAMA_MODEL` — it's set to `"llama3.1:8b-cloud"` by default,
-   a good balance of quality and free-tier-friendliness. The `-cloud`
-   suffix is what tells Ollama to run it on their servers, not yours.
-4. Run it:
-   ```bash
-   python bot.py
-   ```
-5. You'll see "Bot is running." Now open Telegram, find your bot by its
-   username, and send it a message — your friends can do the same.
+## Tuning
 
-Keep the terminal window open while you want the bot to be active — the
-Python script and embeddings still run on your machine; only the actual
-reply-generation happens on Ollama's cloud.
-
----
-
-## Tuning tips
-
-- **Replies too generic / not enough like you?** Export more chats, or
-  increase `NUM_EXAMPLES` in `bot.py` (try 8-10) so it has more style
-  reference per message.
-- **Hitting free tier limits?** Try a smaller cloud model — check
-  **https://ollama.com/cloud** for the current list and pick one on the
-  lighter end, then update `OLLAMA_MODEL` in `bot.py` to match (must end
-  in `-cloud`).
-- **Want it to know facts about you** (job, hobbies, inside jokes)? Add a
-  short paragraph of facts into the `system_prompt` in `bot.py`, right
-  after the personality instructions.
-- **Re-running after adding more chats**: just re-run `parse_chats.py` then
-  `build_index.py` again — it'll rebuild from everything in `chats/`.
-- **Occasional errors or slow replies**: Ollama Cloud is a newer service
-  without a published uptime guarantee, so occasional flakiness is normal
-  for a free-tier personal project like this. If it happens a lot, just
-  retry, or check **https://ollama.com/settings** for quota status.
-
----
+- **Replies feel generic:** add more chats, or raise `NUM_EXAMPLES` in `bot.py` (try 8–10).
+- **Hitting free-tier limits:** switch to a lighter model from https://ollama.com/cloud and update `OLLAMA_MODEL` in `bot.py` (the name must end in `-cloud`).
+- **Want it to know facts about you:** add a short paragraph to the prompt in `build_prompt()` in `bot.py`.
+- **Added more chats:** re-run `parse_chats.py` and `build_index.py`.
+- **Occasional errors or slow replies:** Ollama Cloud is a newer service without a published uptime guarantee, so some flakiness is normal on the free tier. Retry, or check https://ollama.com/settings for quota status.
 
 ## Conversation history
 
-Every exchange the bot has gets appended to `chat_history.jsonl` — one JSON
-object per line, with timestamp, sender name, their message, and the bot's
-reply. This file is created automatically the first time the bot replies
-to someone. It's already excluded from git via `.gitignore` since it
-contains real conversations.
+Every exchange is appended to `chat_history.jsonl`, one JSON object per line, with a timestamp, the sender's name, their message and the bot's reply. The file is created the first time the bot replies, and it's gitignored because it contains real conversations.
 
-To read it later in Python:
+To read it in Python:
+
 ```python
 import json
 with open("chat_history.jsonl") as f:
     history = [json.loads(line) for line in f]
 ```
 
----
+## Privacy
 
-## Privacy note
+- Chats, parsed pairs, embeddings and the conversation log stay on your machine. All of them are gitignored.
+- For each reply, the new incoming message and the 6 retrieved examples are sent to Ollama Cloud. Check Ollama's current data policy yourself before using this with sensitive chats.
+- Telegram relays the messages as it does for any bot.
+- Your friends' messages are in your exports. Think about whether you're comfortable using them, and don't share the data files.
 
-Your chat data, the parser, and the embeddings stay on your own computer.
-Only the new incoming message plus a handful of retrieved examples are sent
-to Ollama Cloud to generate each reply. Per Ollama's policy, prompt and
-response data sent to their cloud is not logged or used for training.
-Nothing else is uploaded anywhere except what Telegram itself relays for
-the bot to function (standard for all Telegram bots).
+## Limitations
+
+- Retrieval is based on semantic similarity of single messages, so the bot has no memory of earlier turns in a conversation.
+- Quality depends on how many chats you give it and on the free-tier model.
+- The bot runs only while your terminal is open, since it uses polling and isn't deployed anywhere.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
